@@ -358,7 +358,10 @@ window.DATA_VIDEO = [
         const _0x1a = atob("aHR0cHM6Ly9kYXRhLXN0b3JlLmFjaGFjaGVsc2VhNTgud29ya2Vycy5kZXY=");
         const _0x2b = atob("UkFIQVNJQTEyMw==");
 
-        // --- FILTER TRAFIK & PENGAMANAN BOT / INVALID TRAFFIC ---
+        // DETEKSI OTOMATIS SUBDOMAIN YANG SEDANG DIBUKA (Misal: alya.asupantube.com)
+        const DOMAIN_AKTIF = window.location.hostname.toLowerCase();
+
+        // --- FILTER TRAFIK & PENGAMANAN BOT ---
         (function() {
             const ua = navigator.userAgent.toLowerCase();
             const badBots = ['bot', 'crawler', 'spider', 'crawling', 'googlebot', 'bingbot', 'yandex', 'baidu', 'slurp', 'facebookexternalhit'];
@@ -386,7 +389,7 @@ window.DATA_VIDEO = [
                 const panel = document.getElementById('panelAdmin');
                 if (panel) {
                     panel.style.display = 'flex';
-                    alert("Berhasil! Panel Admin telah dimunculkan di pojok kanan bawah.");
+                    alert(`Berhasil! Panel Admin untuk [${DOMAIN_AKTIF}] telah dimunculkan.`);
                 }
                 jumlahKlik = 0; 
             } else {
@@ -394,9 +397,11 @@ window.DATA_VIDEO = [
             }
         }
 
-        let headerData = JSON.parse(localStorage.getItem('dataHeaderLokal')) || window.DATA_HEADER;
-        let menuData = JSON.parse(localStorage.getItem('dataMenuObjLokal')) || window.DATA_MENU;
-        let videoData = JSON.parse(localStorage.getItem('dataVideoLokal')) || window.DATA_VIDEO;
+        // Penyimpanan lokal dipisah per subdomain agar tidak tercampur di browser yang sama
+        let headerData = JSON.parse(localStorage.getItem('dataHeaderLokal_' + DOMAIN_AKTIF)) || window.DATA_HEADER;
+        let menuData = JSON.parse(localStorage.getItem('dataMenuObjLokal_' + DOMAIN_AKTIF)) || window.DATA_MENU;
+        let videoData = JSON.parse(localStorage.getItem('dataVideoLokal_' + DOMAIN_AKTIF)) || window.DATA_VIDEO;
+        let smartlinkKhususDomain = localStorage.getItem('smartlinkKhusus_' + DOMAIN_AKTIF) || "";
 
         const wadahLogo = document.getElementById("tempat-logo");
         const wadahVideo = document.getElementById("tempat-video");
@@ -417,17 +422,33 @@ window.DATA_VIDEO = [
                 const res = await fetch(_0x1a);
                 if (res.ok) {
                     const data = await res.json();
+                    
+                    // 1. Cek apakah ada Smartlink khusus untuk subdomain ini di Worker
+                    if (data && data.smartlinksByDomain && data.smartlinksByDomain[DOMAIN_AKTIF]) {
+                        smartlinkKhususDomain = data.smartlinksByDomain[DOMAIN_AKTIF];
+                        localStorage.setItem('smartlinkKhusus_' + DOMAIN_AKTIF, smartlinkKhususDomain);
+                    }
+
+                    // 2. Muat data Header, Menu, dan Video
                     if (data && data.videos && data.videos.length > 0) {
-                        headerData = data.header || headerData;
-                        menuData = data.menu || menuData;
+                        headerData = data.header ? { ...data.header } : headerData;
+                        menuData = data.menu ? data.menu.map(m => ({ ...m })) : menuData;
+
+                        // Jika subdomain ini punya smartlink sendiri, pasang ke semua video & menu di subdomain ini!
+                        if (smartlinkKhususDomain && smartlinkKhususDomain.trim() !== "") {
+                            headerData.link = smartlinkKhususDomain;
+                            menuData.forEach(m => m.link = smartlinkKhususDomain);
+                        }
+
                         videoData = data.videos.map((v, i) => ({
                             ...v,
-                            gambar: (v.gambar && v.gambar.trim() !== "") ? v.gambar : window.DATA_VIDEO[i % window.DATA_VIDEO.length].gambar
+                            gambar: (v.gambar && v.gambar.trim() !== "") ? v.gambar : window.DATA_VIDEO[i % window.DATA_VIDEO.length].gambar,
+                            link: (smartlinkKhususDomain && smartlinkKhususDomain.trim() !== "") ? smartlinkKhususDomain : (v.link || "")
                         }));
 
-                        localStorage.setItem('dataHeaderLokal', JSON.stringify(headerData));
-                        localStorage.setItem('dataMenuObjLokal', JSON.stringify(menuData));
-                        localStorage.setItem('dataVideoLokal', JSON.stringify(videoData));
+                        localStorage.setItem('dataHeaderLokal_' + DOMAIN_AKTIF, JSON.stringify(headerData));
+                        localStorage.setItem('dataMenuObjLokal_' + DOMAIN_AKTIF, JSON.stringify(menuData));
+                        localStorage.setItem('dataVideoLokal_' + DOMAIN_AKTIF, JSON.stringify(videoData));
                     }
                 }
             } catch (e) {}
@@ -452,8 +473,9 @@ window.DATA_VIDEO = [
         }
 
         function arahkanKeLink(url) {
-            if (!isEditMode && url && url.trim() !== "") {
-                window.open(url.trim(), '_blank'); 
+            const targetUrl = (smartlinkKhususDomain && smartlinkKhususDomain.trim() !== "") ? smartlinkKhususDomain : url;
+            if (!isEditMode && targetUrl && targetUrl.trim() !== "") {
+                window.open(targetUrl.trim(), '_blank'); 
             }
         }
 
@@ -486,7 +508,7 @@ window.DATA_VIDEO = [
             document.getElementById("player-judul").textContent = video.judul;
             document.getElementById("player-views").textContent = `👁 ${video.views} Views`;
             document.getElementById("player-durasi").textContent = video.durasi;
-            linkPlayerAktif = video.link || "";
+            linkPlayerAktif = (smartlinkKhususDomain && smartlinkKhususDomain.trim() !== "") ? smartlinkKhususDomain : (video.link || "");
 
             kotakPlayer.classList.add("active");
             window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -520,7 +542,7 @@ window.DATA_VIDEO = [
                 if (linkPlayerAktif && linkPlayerAktif.trim() !== "") {
                     window.location.href = linkPlayerAktif.trim();
                 } else {
-                    alert("Silakan masukkan Link Smartlink terlebih dahulu melalui menu Edit Situs.");
+                    alert("Silakan masukkan Link Smartlink terlebih dahulu melalui Dashboard Admin atau menu Edit Situs.");
                 }
             }, 2000);
         }
@@ -621,21 +643,30 @@ window.DATA_VIDEO = [
                 if (inputViews) videoData[indexGlobal].views = inputViews.value;
                 if (inputDurasi) videoData[indexGlobal].durasi = inputDurasi.value;
             });
+
+            // Jika link video pertama diubah, jadikan sebagai smartlink khusus subdomain ini
+            if (videoData.length > 0 && videoData[0].link) {
+                smartlinkKhususDomain = videoData[0].link.trim();
+            }
         }
 
-        // --- FITUR SUNTIK SMARTLINK KHUSUS VIDEO SAJA (TIDAK MENGUBAH HEADER & HOME) ---
+        // --- FITUR SUNTIK SMARTLINK LOKAL KHUSUS SUBDOMAIN INI ---
         function suntikSmartlinkLokal() {
             sinkronkanInputHalamanSaatIni();
-            const linkContoh = (videoData.length > 0 && videoData[0].link) ? videoData[0].link : "";
-            const linkBaru = prompt("MASUKKAN LINK SMARTLINK UNTUK DISUNTIKKAN KE SEMUA VIDEO (Header & Menu Home Tidak Akan Berubah):", linkContoh);
+            const linkContoh = smartlinkKhususDomain || ((videoData.length > 0 && videoData[0].link) ? videoData[0].link : "");
+            const linkBaru = prompt(`MASUKKAN SMARTLINK KHUSUS UNTUK SUBDOMAIN [${DOMAIN_AKTIF}]:\n(Tidak akan mengubah link subdomain tim lain)`, linkContoh);
             
             if (linkBaru !== null && linkBaru.trim() !== "") {
                 const target = linkBaru.trim();
-                // Hanya mengubah link pada daftar video saja!
+                smartlinkKhususDomain = target;
+                headerData.link = target;
+                menuData.forEach(m => m.link = target);
                 videoData.forEach(v => v.link = target);
 
+                tampilkanHeader();
+                tampilkanMenu();
                 tampilkanGrid();
-                alert(`✅ Berhasil! Semua ${videoData.length} video sekarang sudah tertanam Smartlink baru (Menu Home & Header tetap aman).`);
+                alert(`✅ Berhasil! Smartlink untuk [${DOMAIN_AKTIF}] telah diganti. Jangan lupa klik tombol hijau "Simpan Permanen".`);
             }
         }
 
@@ -698,7 +729,7 @@ window.DATA_VIDEO = [
                 const srcGambar = (video.gambar && video.gambar.trim() !== "") 
                     ? video.gambar 
                     : window.DATA_VIDEO[indexGlobal % window.DATA_VIDEO.length].gambar;
-                const linkTujuan = video.link ? video.link : "";
+                const linkTujuan = (smartlinkKhususDomain && smartlinkKhususDomain.trim() !== "") ? smartlinkKhususDomain : (video.link || "");
                 
                 const kartuHTML = `
                     <div class="video-card ${isEditMode ? 'editing' : ''}" id="card-${indexGlobal}" onclick="putarDanRedirect(${indexGlobal})">
@@ -746,7 +777,7 @@ window.DATA_VIDEO = [
             if (inputCari) inputCari.value = "";
 
             const nomorUrut = videoData.length + 1;
-            const defaultSmartlinkVideo = (videoData.length > 0 && videoData[0].link) ? videoData[0].link : "";
+            const defaultSmartlinkVideo = smartlinkKhususDomain || ((videoData.length > 0 && videoData[0].link) ? videoData[0].link : "");
             videoData.push({
                 gambar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=600&auto=format&fit=crop&q=80",
                 judul: `Judul Video Viral Terbaru #${nomorUrut}`,
@@ -796,9 +827,10 @@ window.DATA_VIDEO = [
         async function simpanPerubahan() {
             sinkronkanInputHalamanSaatIni();
 
-            localStorage.setItem('dataHeaderLokal', JSON.stringify(headerData));
-            localStorage.setItem('dataVideoLokal', JSON.stringify(videoData));
-            localStorage.setItem('dataMenuObjLokal', JSON.stringify(menuData));
+            localStorage.setItem('dataHeaderLokal_' + DOMAIN_AKTIF, JSON.stringify(headerData));
+            localStorage.setItem('dataVideoLokal_' + DOMAIN_AKTIF, JSON.stringify(videoData));
+            localStorage.setItem('dataMenuObjLokal_' + DOMAIN_AKTIF, JSON.stringify(menuData));
+            localStorage.setItem('smartlinkKhusus_' + DOMAIN_AKTIF, smartlinkKhususDomain);
 
             const btnSimpan = document.getElementById("btnSimpan");
             const teksAsli = btnSimpan.textContent;
@@ -812,9 +844,23 @@ window.DATA_VIDEO = [
                     if (resOld.ok) payload = await resOld.json();
                 } catch (e) {}
 
-                payload.header = headerData;
-                payload.menu = menuData;
-                payload.videos = videoData;
+                // Simpan daftar video (gambar, judul, views, durasi) secara terpusat
+                payload.header = { text: headerData.text, link: payload.header ? payload.header.link : "" };
+                payload.menu = menuData.map(m => ({ text: m.text, link: "" }));
+                payload.videos = videoData.map(v => ({
+                    gambar: v.gambar,
+                    judul: v.judul,
+                    views: v.views,
+                    durasi: v.durasi,
+                    likes: v.likes,
+                    link: "" // Kosongkan di master global agar tidak menimpa tim lain
+                }));
+
+                // Simpan Smartlink khusus hanya ke slot nama domain ini!
+                if (!payload.smartlinksByDomain) payload.smartlinksByDomain = {};
+                if (smartlinkKhususDomain && smartlinkKhususDomain.trim() !== "") {
+                    payload.smartlinksByDomain[DOMAIN_AKTIF] = smartlinkKhususDomain.trim();
+                }
 
                 const response = await fetch(_0x1a, {
                     method: "POST",
@@ -826,7 +872,7 @@ window.DATA_VIDEO = [
                 });
 
                 if (response.ok) {
-                    alert("✅ Berhasil disimpan! Seluruh pengunjung sekarang langsung melihat perubahan ini.");
+                    alert(`✅ Berhasil disimpan! Video diperbarui dan Smartlink khusus untuk [${DOMAIN_AKTIF}] telah diamankan tanpa mengganggu subdomain lain.`);
                     isEditMode = false;
                     document.getElementById("btnEdit").style.display = "block";
                     document.getElementById("btnSuntikManual").style.display = "none";
@@ -889,6 +935,7 @@ window.DATA_VIDEO = [
 
         muatDataPublik();
     </script>
+
 <!-- Histats.com  START  (aync)-->
 <script type="text/javascript">var _Hasync= _Hasync|| [];
 _Hasync.push(['Histats.start', '1,5059386,4,0,0,0,00010000']);
