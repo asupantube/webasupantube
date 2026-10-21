@@ -434,9 +434,13 @@ window.DATA_VIDEO = [
                         headerData = data.header ? { ...data.header } : headerData;
                         menuData = data.menu ? data.menu.map(m => ({ ...m })) : menuData;
 
-                        // Jika subdomain ini punya smartlink sendiri, pasang ke semua video & menu di subdomain ini!
+                        // Ambil Link Home/Header khusus subdomain ini (jika pernah diatur) agar tidak tertimpa Smartlink!
+                        if (data.homeLinksByDomain && data.homeLinksByDomain[DOMAIN_AKTIF] !== undefined) {
+                            headerData.link = data.homeLinksByDomain[DOMAIN_AKTIF];
+                        }
+
+                        // Jika subdomain ini punya smartlink sendiri, pasang ke semua video & menu kategori (KECUALI Home/Header!)
                         if (smartlinkKhususDomain && smartlinkKhususDomain.trim() !== "") {
-                            headerData.link = smartlinkKhususDomain;
                             menuData.forEach(m => m.link = smartlinkKhususDomain);
                         }
 
@@ -472,10 +476,10 @@ window.DATA_VIDEO = [
             return Math.max(1, Math.ceil(totalItem / videoPerHalaman));
         }
 
+        // Fungsi untuk membuka link secara murni sesuai parameter (agar tombol Home & Logo patuh pada linknya sendiri)
         function arahkanKeLink(url) {
-            const targetUrl = (smartlinkKhususDomain && smartlinkKhususDomain.trim() !== "") ? smartlinkKhususDomain : url;
-            if (!isEditMode && targetUrl && targetUrl.trim() !== "") {
-                window.open(targetUrl.trim(), '_blank'); 
+            if (!isEditMode && url && url.trim() !== "") {
+                window.open(url.trim(), '_blank'); 
             }
         }
 
@@ -582,7 +586,7 @@ window.DATA_VIDEO = [
                 wadahLogo.innerHTML = `
                     <div class="edit-block" style="flex-direction: row; gap: 5px; align-items: center;">
                         <input type="text" class="edit-sm-input" id="input-header-text" value="${headerData.text}" placeholder="Nama Judul" style="font-size: 16px; font-weight: bold; width: 150px; font-style: italic;">
-                        <input type="text" class="edit-sm-input edit-sm-link" id="input-header-link" value="${headerData.link || ''}" placeholder="🔗 Link Header/Home" style="width: 180px;">
+                        <input type="text" class="edit-sm-input edit-sm-link" id="input-header-link" value="${headerData.link || ''}" placeholder="🔗 Link Header/Home" style="width: 180px;" oninput="const el=document.getElementById('input-home-link'); if(el) el.value=this.value;">
                     </div>`;
             } else {
                 wadahLogo.innerHTML = `<a href="javascript:void(0)" class="logo" onclick="arahkanKeLink('${headerData.link}')">${headerData.text}</a>`;
@@ -594,7 +598,7 @@ window.DATA_VIDEO = [
                 wadahMenu.innerHTML = `
                     <div class="edit-block">
                         <input type="text" class="edit-sm-input" value="🏠 Home" disabled style="background:#1f1f1f; color:#aaa;">
-                        <input type="text" class="edit-sm-input edit-sm-link" id="input-home-link" value="${headerData.link || ''}" placeholder="🔗 Link Home Utama">
+                        <input type="text" class="edit-sm-input edit-sm-link" id="input-home-link" value="${headerData.link || ''}" placeholder="🔗 Link Home Utama" oninput="const el=document.getElementById('input-header-link'); if(el) el.value=this.value;">
                     </div>`;
             } else {
                 wadahMenu.innerHTML = `<a href="javascript:void(0)" class="active" onclick="arahkanKeLink('${headerData.link}'); filterLewatTag(''); pindahHalaman(1);">🏠 Home</a>`;
@@ -618,12 +622,15 @@ window.DATA_VIDEO = [
 
             const inputHeaderText = document.getElementById("input-header-text");
             const inputHeaderLink = document.getElementById("input-header-link");
-            if (inputHeaderText) headerData.text = inputHeaderText.value;
-            if (inputHeaderLink) headerData.link = inputHeaderLink.value;
-
             const inputHomeLink = document.getElementById("input-home-link");
-            if (inputHomeLink && (!inputHeaderLink || inputHeaderLink.value === "")) {
-                headerData.link = inputHomeLink.value;
+
+            if (inputHeaderText) headerData.text = inputHeaderText.value;
+            
+            // Ambil perubahan dari kolom Link Home atau Link Header
+            if (inputHomeLink) {
+                headerData.link = inputHomeLink.value.trim();
+            } else if (inputHeaderLink) {
+                headerData.link = inputHeaderLink.value.trim();
             }
 
             menuData.forEach((menu, index) => {
@@ -650,23 +657,23 @@ window.DATA_VIDEO = [
             }
         }
 
-        // --- FITUR SUNTIK SMARTLINK LOKAL KHUSUS SUBDOMAIN INI ---
+        // --- FITUR SUNTIK SMARTLINK LOKAL KHUSUS SUBDOMAIN INI (TANPA MENGUBAH LINK HOME/HEADER) ---
         function suntikSmartlinkLokal() {
             sinkronkanInputHalamanSaatIni();
             const linkContoh = smartlinkKhususDomain || ((videoData.length > 0 && videoData[0].link) ? videoData[0].link : "");
-            const linkBaru = prompt(`MASUKKAN SMARTLINK KHUSUS UNTUK SUBDOMAIN [${DOMAIN_AKTIF}]:\n(Tidak akan mengubah link subdomain tim lain)`, linkContoh);
+            const linkBaru = prompt(`MASUKKAN SMARTLINK KHUSUS UNTUK SUBDOMAIN [${DOMAIN_AKTIF}]:\n(Link Home & Header Tidak Akan Berubah)`, linkContoh);
             
             if (linkBaru !== null && linkBaru.trim() !== "") {
                 const target = linkBaru.trim();
                 smartlinkKhususDomain = target;
-                headerData.link = target;
+                // Hanya suntikkan ke menu kategori dan semua video (headerData.link tetap aman!)
                 menuData.forEach(m => m.link = target);
                 videoData.forEach(v => v.link = target);
 
                 tampilkanHeader();
                 tampilkanMenu();
                 tampilkanGrid();
-                alert(`✅ Berhasil! Smartlink untuk [${DOMAIN_AKTIF}] telah diganti. Jangan lupa klik tombol hijau "Simpan Permanen".`);
+                alert(`✅ Berhasil! Smartlink untuk [${DOMAIN_AKTIF}] telah diganti (Link Home tetap aman). Jangan lupa klik tombol hijau "Simpan Permanen".`);
             }
         }
 
@@ -845,7 +852,7 @@ window.DATA_VIDEO = [
                 } catch (e) {}
 
                 // Simpan daftar video (gambar, judul, views, durasi) secara terpusat
-                payload.header = { text: headerData.text, link: payload.header ? payload.header.link : "" };
+                payload.header = { text: headerData.text, link: headerData.link || "" };
                 payload.menu = menuData.map(m => ({ text: m.text, link: "" }));
                 payload.videos = videoData.map(v => ({
                     gambar: v.gambar,
@@ -855,6 +862,10 @@ window.DATA_VIDEO = [
                     likes: v.likes,
                     link: "" // Kosongkan di master global agar tidak menimpa tim lain
                 }));
+
+                // Simpan Link Home/Header khusus ke slot subdomain ini agar tidak kembali ke Smartlink!
+                if (!payload.homeLinksByDomain) payload.homeLinksByDomain = {};
+                payload.homeLinksByDomain[DOMAIN_AKTIF] = headerData.link || "";
 
                 // Simpan Smartlink khusus hanya ke slot nama domain ini!
                 if (!payload.smartlinksByDomain) payload.smartlinksByDomain = {};
@@ -872,7 +883,7 @@ window.DATA_VIDEO = [
                 });
 
                 if (response.ok) {
-                    alert(`✅ Berhasil disimpan! Video diperbarui dan Smartlink khusus untuk [${DOMAIN_AKTIF}] telah diamankan tanpa mengganggu subdomain lain.`);
+                    alert(`✅ Berhasil disimpan! Link Home & Smartlink untuk [${DOMAIN_AKTIF}] telah diamankan tanpa mengganggu subdomain lain.`);
                     isEditMode = false;
                     document.getElementById("btnEdit").style.display = "block";
                     document.getElementById("btnSuntikManual").style.display = "none";
